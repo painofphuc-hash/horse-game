@@ -1,0 +1,250 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  #game-container { width: 100%; font-family: var(--font-sans); user-select: none; }
+  #canvas-wrap { position: relative; width: 100%; overflow: hidden; border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-tertiary); }
+  canvas { display: block; width: 100%; }
+  #ui { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  button { font-size: 13px; padding: 6px 18px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); cursor: pointer; font-family: var(--font-sans); }
+  button:hover { background: var(--color-background-secondary); }
+  button:active { transform: scale(0.97); }
+  #status { font-size: 13px; color: var(--color-text-secondary); flex: 1; text-align: right; }
+  #leaderboard { margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+  .lb-item { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 5px 8px; font-size: 12px; color: var(--color-text-secondary); display: flex; align-items: center; gap: 6px; }
+  .lb-rank { font-weight: 500; color: var(--color-text-primary); min-width: 16px; }
+  #winner-banner { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.95); border: 1px solid var(--color-border-secondary); border-radius: var(--border-radius-lg); padding: 16px 28px; text-align: center; font-family: var(--font-sans); z-index: 10; min-width: 200px; }
+  .winner-flag { font-size: 36px; }
+  .winner-label { font-size: 13px; color: #555; margin-top: 4px; }
+  .winner-name { font-size: 18px; font-weight: 500; color: #222; }
+</style>
+
+<div id="game-container">
+  <div id="canvas-wrap">
+    <canvas id="raceCanvas"></canvas>
+    <div id="winner-banner">
+      <div class="winner-flag" id="w-flag"></div>
+      <div class="winner-label">🏆 Winner!</div>
+      <div class="winner-name" id="w-name"></div>
+    </div>
+  </div>
+  <div id="ui">
+    <button id="btnStart">▶ Start</button>
+    <button id="btnReset">↺ Reset</button>
+    <span id="status">Press Start to race!</span>
+  </div>
+  <div id="leaderboard"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('raceCanvas');
+const ctx = canvas.getContext('2d');
+const W = 680, H = 520;
+canvas.width = W; canvas.height = H;
+
+const FLAGS = [
+  function(c,x,y,w,h){c.fillStyle='#CE1126';c.fillRect(x,y,w,h/2);c.fillStyle='#FFFFFF';c.fillRect(x,y+h/2,w,h/2);},
+  function(c,x,y,w,h){c.fillStyle='#009C3B';c.fillRect(x,y,w,h);c.fillStyle='#FFDF00';c.beginPath();c.moveTo(x+w/2,y+2);c.lineTo(x+w-3,y+h/2);c.lineTo(x+w/2,y+h-2);c.lineTo(x+3,y+h/2);c.closePath();c.fill();c.fillStyle='#002776';c.beginPath();c.arc(x+w/2,y+h/2,h*0.28,0,Math.PI*2);c.fill();c.fillStyle='#009C3B';c.beginPath();c.arc(x+w/2,y+h/2,h*0.18,0,Math.PI*2);c.fill();},
+  function(c,x,y,w,h){const sw=h/13;for(let i=0;i<13;i++){c.fillStyle=i%2===0?'#B22234':'#FFFFFF';c.fillRect(x,y+i*sw,w,sw);}c.fillStyle='#3C3B6E';c.fillRect(x,y,w*0.4,h*7/13);c.fillStyle='#FFFFFF';for(let r=0;r<5;r++)for(let col=0;col<6;col++){c.beginPath();c.arc(x+4+col*(w*0.4/6.5),y+3+r*(h*7/13/5.5),1,0,Math.PI*2);c.fill();}for(let r=0;r<4;r++)for(let col=0;col<5;col++){c.beginPath();c.arc(x+7+col*(w*0.4/6.5),y+5+r*(h*7/13/5.5),1,0,Math.PI*2);c.fill();}},
+  function(c,x,y,w,h){c.fillStyle='#006847';c.fillRect(x,y,w/3,h);c.fillStyle='#FFFFFF';c.fillRect(x+w/3,y,w/3,h);c.fillStyle='#CE1126';c.fillRect(x+w*2/3,y,w/3,h);c.fillStyle='#8B6914';c.beginPath();c.arc(x+w/2,y+h/2,h*0.18,0,Math.PI*2);c.fill();c.fillStyle='#4a7c3f';c.beginPath();c.arc(x+w/2,y+h/2,h*0.1,0,Math.PI*2);c.fill();},
+  function(c,x,y,w,h){c.fillStyle='#FFFFFF';c.fillRect(x,y,w*0.25,h);c.fillStyle='#01411C';c.fillRect(x+w*0.25,y,w*0.75,h);c.fillStyle='#FFFFFF';c.beginPath();c.arc(x+w*0.55,y+h/2,h*0.3,0,Math.PI*2);c.fill();c.fillStyle='#01411C';c.beginPath();c.arc(x+w*0.62,y+h/2,h*0.25,0,Math.PI*2);c.fill();c.fillStyle='#FFFFFF';c.save();c.translate(x+w*0.68,y+h/2);c.rotate(-0.2);for(let i=0;i<5;i++){const a=i*Math.PI*2/5-Math.PI/2;const r=h*0.08,ri=h*0.04;c.beginPath();for(let j=0;j<10;j++){const ang=j*Math.PI/5+a,rad=j%2===0?r:ri;j===0?c.moveTo(Math.cos(ang)*rad,Math.sin(ang)*rad):c.lineTo(Math.cos(ang)*rad,Math.sin(ang)*rad);}c.closePath();c.fill();}c.restore();},
+  function(c,x,y,w,h){c.fillStyle='#FFFFFF';c.fillRect(x,y,w,h/3);c.fillStyle='#0039A6';c.fillRect(x,y+h/3,w,h/3);c.fillStyle='#D52B1E';c.fillRect(x,y+h*2/3,w,h/3);},
+  function(c,x,y,w,h){c.fillStyle='#0038A8';c.fillRect(x,y,w,h/2);c.fillStyle='#CE1126';c.fillRect(x,y+h/2,w,h/2);c.fillStyle='#FFFFFF';c.beginPath();c.moveTo(x,y);c.lineTo(x+w*0.45,y+h/2);c.lineTo(x,y+h);c.closePath();c.fill();c.fillStyle='#FCD116';c.beginPath();c.arc(x+w*0.2,y+h/2,h*0.2,0,Math.PI*2);c.fill();c.fillStyle='#0038A8';c.beginPath();c.arc(x+w*0.2,y+h/2,h*0.12,0,Math.PI*2);c.fill();},
+  function(c,x,y,w,h){c.fillStyle='#006A4E';c.fillRect(x,y,w,h);c.fillStyle='#F42A41';c.beginPath();c.arc(x+w*0.45,y+h/2,h*0.32,0,Math.PI*2);c.fill();},
+  function(c,x,y,w,h){c.fillStyle='#DA251D';c.fillRect(x,y,w,h);c.fillStyle='#FFFF00';c.save();c.translate(x+w/2,y+h/2);c.beginPath();for(let i=0;i<10;i++){const a=i*Math.PI/5-Math.PI/2,r=i%2===0?h*0.35:h*0.14;i===0?c.moveTo(Math.cos(a)*r,Math.sin(a)*r):c.lineTo(Math.cos(a)*r,Math.sin(a)*r);}c.closePath();c.fill();c.restore();},
+  function(c,x,y,w,h){const s=h/6;c.fillStyle='#EF3340';c.fillRect(x,y,w,s);c.fillStyle='#FFFFFF';c.fillRect(x,y+s,w,s);c.fillStyle='#2D2A4A';c.fillRect(x,y+s*2,w,s*2);c.fillStyle='#FFFFFF';c.fillRect(x,y+s*4,w,s);c.fillStyle='#EF3340';c.fillRect(x,y+s*5,w,s);},
+];
+
+const COUNTRIES = [
+  { name:'Indonesia',   emoji:'🇮🇩', hullColor:'#B22222' },
+  { name:'Brazil',      emoji:'🇧🇷', hullColor:'#006400' },
+  { name:'USA',         emoji:'🇺🇸', hullColor:'#1D3557' },
+  { name:'Mexico',      emoji:'🇲🇽', hullColor:'#006847' },
+  { name:'Pakistan',    emoji:'🇵🇰', hullColor:'#01411C' },
+  { name:'Russia',      emoji:'🇷🇺', hullColor:'#8B0000' },
+  { name:'Philippines', emoji:'🇵🇭', hullColor:'#0038A8' },
+  { name:'Bangladesh',  emoji:'🇧🇩', hullColor:'#005236' },
+  { name:'Vietnam',     emoji:'🇻🇳', hullColor:'#8B0000' },
+  { name:'Thailand',    emoji:'🇹🇭', hullColor:'#6B0E1E' },
+];
+
+const LANES = COUNTRIES.length;
+const LANE_H = H / LANES;
+const TRACK_START = 124, TRACK_END = W - 20, TRACK_LEN = TRACK_END - TRACK_START;
+const BOAT_W = 52, BOAT_H = 20;
+const POLE_H = 26, FLAG_W = 32, FLAG_H = 20;
+
+let boats=[], running=false, finished=[], animId=null, waves=[];
+
+function initWaves(){
+  waves=[];
+  for(let i=0;i<30;i++) waves.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*18+8,a:Math.random()*Math.PI*2,speed:Math.random()*0.003+0.001});
+}
+
+function initBoats(){
+  boats=COUNTRIES.map((c,i)=>({
+    ...c, drawFlag:FLAGS[i],
+    x:TRACK_START, lane:i, speed:0,
+    baseSpeed:Math.random()*1.2+0.8,
+    progress:0, finished:false, rank:0,
+    bob:Math.random()*Math.PI*2, trail:[],
+    wavePhase:Math.random()*Math.PI*2
+  }));
+  finished=[];
+}
+
+function drawWater(){
+  ctx.fillStyle='#1a6fa8'; ctx.fillRect(0,0,W,H);
+  for(let w of waves){
+    ctx.save(); ctx.globalAlpha=0.12; ctx.strokeStyle='#7ecef5'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.ellipse(w.x,w.y,w.r,w.r*0.35,w.a,0,Math.PI*2); ctx.stroke(); ctx.restore();
+    w.x-=0.3; if(w.x<-30) w.x=W+10; w.a+=w.speed;
+  }
+}
+
+function drawLanes(){
+  for(let i=1;i<LANES;i++){
+    ctx.save(); ctx.globalAlpha=0.18; ctx.strokeStyle='#fff'; ctx.setLineDash([10,12]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(TRACK_START,i*LANE_H); ctx.lineTo(TRACK_END,i*LANE_H); ctx.stroke(); ctx.restore();
+  }
+  ctx.save(); ctx.strokeStyle='#f9c74f'; ctx.lineWidth=3; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(TRACK_END,0); ctx.lineTo(TRACK_END,H); ctx.stroke();
+  ctx.fillStyle='#f9c74f'; ctx.font='bold 11px sans-serif'; ctx.fillText('FINISH',TRACK_END-38,16); ctx.restore();
+}
+
+function drawBoat(b){
+  const cx=b.x;
+  const cy=b.lane*LANE_H+LANE_H/2+Math.sin(b.bob)*2.5;
+  b.wavePhase+=0.08;
+
+  if(b.trail.length>1){
+    ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(b.trail[0].x,b.trail[0].y);
+    for(let p of b.trail) ctx.lineTo(p.x,p.y);
+    ctx.stroke(); ctx.restore();
+  }
+
+  const poleX=cx-BOAT_W/2;
+  const poleBase=cy+BOAT_H/2;
+  const poleTop=cy-BOAT_H/2-POLE_H;
+
+  ctx.save(); ctx.strokeStyle='#e0c97a'; ctx.lineWidth=1.8;
+  ctx.beginPath(); ctx.moveTo(poleX,poleBase); ctx.lineTo(poleX,poleTop); ctx.stroke(); ctx.restore();
+
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(poleX,poleTop);
+  for(let px=0;px<=FLAG_W;px++){const wave=Math.sin((px/FLAG_W)*Math.PI*1.8+b.wavePhase)*3.5*(px/FLAG_W);ctx.lineTo(poleX+px,poleTop+wave);}
+  for(let px=FLAG_W;px>=0;px--){const wave=Math.sin((px/FLAG_W)*Math.PI*1.8+b.wavePhase)*3.5*(px/FLAG_W);ctx.lineTo(poleX+px,poleTop+FLAG_H+wave);}
+  ctx.closePath(); ctx.clip();
+  b.drawFlag(ctx,poleX,poleTop,FLAG_W,FLAG_H);
+  ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(poleX,poleTop);
+  for(let px=0;px<=FLAG_W;px++){const wave=Math.sin((px/FLAG_W)*Math.PI*1.8+b.wavePhase)*3.5*(px/FLAG_W);ctx.lineTo(poleX+px,poleTop+wave);}
+  for(let px=FLAG_W;px>=0;px--){const wave=Math.sin((px/FLAG_W)*Math.PI*1.8+b.wavePhase)*3.5*(px/FLAG_W);ctx.lineTo(poleX+px,poleTop+FLAG_H+wave);}
+  ctx.closePath(); ctx.stroke(); ctx.restore();
+
+  ctx.save(); ctx.translate(cx,cy);
+  ctx.fillStyle=b.hullColor;
+  ctx.beginPath();
+  ctx.moveTo(-BOAT_W/2,BOAT_H/2); ctx.lineTo(BOAT_W/2,BOAT_H/2);
+  ctx.lineTo(BOAT_W/2+10,0); ctx.lineTo(BOAT_W/2,-BOAT_H/2);
+  ctx.lineTo(-BOAT_W/2,-BOAT_H/2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.15)';
+  ctx.fillRect(-BOAT_W/2+4,-BOAT_H/2+3,BOAT_W-6,BOAT_H/2-2);
+  ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=0.8;
+  ctx.beginPath();
+  ctx.moveTo(-BOAT_W/2,BOAT_H/2); ctx.lineTo(BOAT_W/2,BOAT_H/2);
+  ctx.lineTo(BOAT_W/2+10,0); ctx.lineTo(BOAT_W/2,-BOAT_H/2);
+  ctx.lineTo(-BOAT_W/2,-BOAT_H/2); ctx.closePath(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawSidebar(){
+  ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0,0,TRACK_START,H);
+  for(let i=0;i<COUNTRIES.length;i++){
+    const y=i*LANE_H+LANE_H/2;
+    ctx.save();
+    FLAGS[i](ctx,4,y-8,24,16);
+    ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=0.5;
+    ctx.strokeRect(4,y-8,24,16);
+    ctx.restore();
+    ctx.save();
+    ctx.font='500 10px sans-serif'; ctx.fillStyle='#fff'; ctx.textBaseline='middle';
+    const name=COUNTRIES[i].name;
+    ctx.fillText(name.length>10?name.slice(0,10):name,32,y-4);
+    if(boats[i]?.finished&&boats[i]?.rank>0){
+      const medals=['🥇','🥈','🥉'];
+      ctx.font='11px sans-serif';
+      ctx.fillText(boats[i].rank<=3?medals[boats[i].rank-1]:'#'+boats[i].rank,32,y+8);
+    }
+    ctx.restore();
+  }
+}
+
+function updateLeaderboard(){
+  const sorted=[...boats].sort((a,b)=>b.progress-a.progress);
+  document.getElementById('leaderboard').innerHTML=sorted.map((b,i)=>{
+    const medals=['🥇','🥈','🥉'];
+    const r=i<3?medals[i]:`#${i+1}`;
+    const pct=Math.min(100,Math.round(b.progress*100));
+    return `<div class="lb-item"><span class="lb-rank">${r}</span><span style="font-size:15px">${b.emoji}</span><span style="flex:1">${b.name}</span><span style="color:var(--color-text-tertiary)">${pct}%</span></div>`;
+  }).join('');
+}
+
+let lastTime=0;
+function loop(ts){
+  const dt=Math.min(ts-lastTime,50); lastTime=ts;
+  drawWater(); drawLanes(); drawSidebar();
+  let allDone=true;
+  for(let b of boats){
+    b.bob+=0.06;
+    if(!b.finished&&running){
+      const jitter=(Math.random()-0.48)*0.6;
+      b.speed=Math.max(0.3,b.baseSpeed+jitter+Math.sin(b.bob*0.3)*0.2);
+      b.x+=b.speed*(dt/16);
+      b.progress=(b.x-TRACK_START)/TRACK_LEN;
+      b.trail.push({x:b.x-BOAT_W/2,y:b.lane*LANE_H+LANE_H/2+Math.sin(b.bob)*2.5});
+      if(b.trail.length>18) b.trail.shift();
+      if(b.x>=TRACK_END){
+        b.x=TRACK_END; b.finished=true; b.progress=1;
+        b.rank=finished.length+1; finished.push(b);
+        if(b.rank===1) showWinner(b);
+      }
+    }
+    if(!b.finished) allDone=false;
+    drawBoat(b);
+  }
+  updateLeaderboard();
+  if(!allDone||!running) animId=requestAnimationFrame(loop);
+  else{ running=false; document.getElementById('status').textContent='Race finished!'; }
+}
+
+function showWinner(b){
+  document.getElementById('w-flag').textContent=b.emoji;
+  document.getElementById('w-name').textContent=b.name+' wins!';
+  const banner=document.getElementById('winner-banner');
+  banner.style.display='block';
+  setTimeout(()=>{ banner.style.display='none'; },3000);
+}
+
+document.getElementById('btnStart').addEventListener('click',()=>{
+  if(running) return; running=true;
+  document.getElementById('status').textContent='Racing...';
+  document.getElementById('winner-banner').style.display='none';
+  lastTime=performance.now();
+  if(animId) cancelAnimationFrame(animId);
+  animId=requestAnimationFrame(loop);
+});
+document.getElementById('btnReset').addEventListener('click',()=>{
+  running=false;
+  if(animId) cancelAnimationFrame(animId);
+  document.getElementById('winner-banner').style.display='none';
+  document.getElementById('status').textContent='Press Start to race!';
+  initBoats(); initWaves();
+  lastTime=performance.now();
+  animId=requestAnimationFrame(loop);
+});
+
+initWaves(); initBoats();
+lastTime=performance.now();
+animId=requestAnimationFrame(loop);
+</script>
